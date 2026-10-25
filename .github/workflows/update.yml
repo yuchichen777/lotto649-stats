@@ -1,11 +1,11 @@
 # 每期開獎後自動抓資料、產生網站並部署到 GitHub Pages
-# 大樂透每週二、五 20:30（台灣時間）開獎，這裡在 22:30 與隔天早上 08:30 各跑一次（UTC 14:30 / 00:30）
+# 各玩法週一至六 20:30（台灣時間）開獎，這裡在 22:30 與隔天早上 08:30 各跑一次（UTC 14:30 / 00:30）
 name: Update & Deploy
 
 on:
   schedule:
-    - cron: "30 14 * * 2,5"
-    - cron: "30 0 * * 3,6"
+    - cron: "30 14 * * 1-6"
+    - cron: "30 0 * * 2-6,0"
   push:
     branches: [main]
   workflow_dispatch:
@@ -39,6 +39,7 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add data
             git commit -m "Update draw data"
+            git pull --rebase
             git push
           fi
 

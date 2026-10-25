@@ -1,7 +1,7 @@
 {
-  "name": "大樂透開獎查詢・統計",
-  "short_name": "大樂透統計站",
-  "description": "大樂透最新開獎號碼、自動對獎、歷史開獎紀錄與號碼出現次數統計，每期開獎後自動更新。",
+  "name": "台灣彩券開獎查詢・對獎・統計",
+  "short_name": "LottoTW 開獎統計",
+  "description": "大樂透、威力彩、今彩539、3星彩、4星彩最新開獎號碼，線上對獎、歷史開獎紀錄與號碼統計，每期開獎後自動更新。",
   "base_url": "https://lottotw.com",
   "adsense_client": "",
   "ga_measurement_id": ""

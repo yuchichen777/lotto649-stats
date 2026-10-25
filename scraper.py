@@ -1,11 +1,12 @@
-"""抓取台灣彩券「大樂透」歷史開獎資料，存成 data/lotto649.json。
+"""抓取台灣彩券各玩法歷史開獎資料，存成 data/<slug>.json。
 
-第一次執行會從 2007-01 抓到本月；之後只補抓最後一筆資料所在月份到本月（增量更新）。
-只用 Python 標準函式庫。
+第一次執行會從各玩法最早的月份抓到本月；之後只補抓最後一筆資料所在月份到本月（增量更新）。
+已停售的玩法有資料後就不再抓。只用 Python 標準函式庫。
 
 用法：
-    python scraper.py          # 增量更新
-    python scraper.py --full   # 全部重抓
+    python scraper.py                 # 全部玩法增量更新
+    python scraper.py daily539 3d     # 只更新指定玩法
+    python scraper.py --full lotto649 # 指定玩法全部重抓
 """
 import json
 import sys
@@ -14,56 +15,55 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-API = ("https://api.taiwanlottery.com/TLCAPIWeB/Lottery/Lotto649Result"
+from games import BY_SLUG, GAMES
+
+API = ("https://api.taiwanlottery.com/TLCAPIWeB/Lottery/{endpoint}"
        "?period&month={month}&pageNum=1&pageSize=50")
-DATA_FILE = Path(__file__).parent / "data" / "lotto649.json"
-FIRST_MONTH = (2007, 1)
-
-# API 欄位 -> 獎項名稱（依獎項高低排序）
-PRIZE_KEYS = [
-    ("jackpotAssign", "頭獎"),
-    ("secondAssign", "貳獎"),
-    ("thirdAssign", "參獎"),
-    ("fourthAssign", "肆獎"),
-    ("fifthAssign", "伍獎"),
-    ("sixthAssign", "陸獎"),
-    ("seventhAssign", "柒獎"),
-    ("normalAssign", "普獎"),
-]
+DATA_DIR = Path(__file__).parent / "data"
 
 
-def fetch_month(year, month):
-    url = API.format(month=f"{year:04d}-{month:02d}")
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 lotto649-stats"})
+def fetch_month(game, year, month):
+    url = API.format(endpoint=game["endpoint"], month=f"{year:04d}-{month:02d}")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 lottotw-stats"})
     for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 payload = json.load(resp)
-            return (payload.get("content") or {}).get("lotto649Res") or []
+            return (payload.get("content") or {}).get(game["res_key"]) or []
         except Exception as exc:  # 網路偶發錯誤就重試
             if attempt == 2:
                 raise
-            print(f"  {year}-{month:02d} 失敗（{exc}），重試中…")
+            print(f"  {game['name']} {year}-{month:02d} 失敗（{exc}），重試中…")
             time.sleep(3)
 
 
-def parse_draw(raw):
-    nums = raw["drawNumberSize"]
+def parse_draw(game, raw):
+    appear = raw.get("drawNumberAppear") or []
+    if game["kind"] == "digits":
+        numbers, special, order = list(appear), None, list(appear)
+    else:
+        nums = raw.get("drawNumberSize") or sorted(appear)
+        k = game["pick"]
+        numbers = sorted(nums[:k])
+        special = nums[k] if game["special"] else None
+        order = appear[:k]
+
+    prizes = []
+    for key, name, _ in game["prizes"]:
+        p = raw.get(key) or {}
+        if p.get("bonus"):
+            name = f"{name}（{p['bonus']}）"
+        prizes.append({"name": name, "winners": p.get("winnerCount") or 0,
+                       "amount": p.get("perPrize") or 0})
+
     return {
         "period": raw["period"],
         "date": raw["lotteryDate"][:10],
-        "numbers": sorted(nums[:6]),
-        "special": nums[6],
-        "order": raw["drawNumberAppear"][:6],  # 開出順序
+        "numbers": numbers,
+        "special": special,
+        "order": order,
         "sales": raw.get("sellAmount"),
-        "prizes": [
-            {
-                "name": name,
-                "winners": (raw.get(key) or {}).get("winnerCount", 0),
-                "amount": (raw.get(key) or {}).get("perPrize", 0),
-            }
-            for key, name in PRIZE_KEYS
-        ],
+        "prizes": prizes,
     }
 
 
@@ -76,34 +76,43 @@ def iter_months(start, end):
             y, m = y + 1, 1
 
 
-def main():
-    full = "--full" in sys.argv
+def update(game, full=False):
+    path = DATA_DIR / f"{game['slug']}.json"
     draws = {}
-    if DATA_FILE.exists() and not full:
-        for d in json.loads(DATA_FILE.read_text(encoding="utf-8")):
+    if path.exists() and not full:
+        for d in json.loads(path.read_text(encoding="utf-8")):
             draws[d["period"]] = d
+
+    if draws and not game["active"]:
+        print(f"{game['name']}：已停售，略過")
+        return
 
     if draws:
         last_date = max(d["date"] for d in draws.values())
         start = (int(last_date[:4]), int(last_date[5:7]))
     else:
-        start = FIRST_MONTH
+        start = game["first_month"]
 
     today = date.today()
     before = len(draws)
     for y, m in iter_months(start, (today.year, today.month)):
-        rows = fetch_month(y, m)
-        for raw in rows:
-            d = parse_draw(raw)
+        for raw in fetch_month(game, y, m):
+            d = parse_draw(game, raw)
             draws[d["period"]] = d
-        print(f"{y}-{m:02d}: {len(rows)} 期")
         time.sleep(0.3)  # 對官方伺服器客氣一點
 
     result = sorted(draws.values(), key=lambda d: d["period"], reverse=True)
-    DATA_FILE.parent.mkdir(exist_ok=True)
-    DATA_FILE.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")),
-                         encoding="utf-8")
-    print(f"完成：共 {len(result)} 期（新增 {len(result) - before} 期）")
+    DATA_DIR.mkdir(exist_ok=True)
+    path.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+                    encoding="utf-8")
+    print(f"{game['name']}：共 {len(result)} 期（新增 {len(result) - before} 期）")
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    games = [BY_SLUG[a] for a in args] if args else GAMES
+    for game in games:
+        update(game, full="--full" in sys.argv)
 
 
 if __name__ == "__main__":
