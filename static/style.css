@@ -129,3 +129,8 @@ footer a { color: var(--muted); }
 .games h2 { margin: 0; }
 .games h2 a { color: var(--text); }
 .tag { display: inline-block; font-size: .75rem; padding: 1px 8px; border-radius: 999px; background: var(--line); color: var(--muted); vertical-align: middle; margin-left: 6px; }
+.picker.bingo { grid-template-columns: repeat(10, 1fr); max-width: 520px; }
+.bingo-nums { min-width: 280px; font-size: .9rem; letter-spacing: .02em; word-spacing: .15em; }
+.bingo-nums b { color: var(--special); }
+.picker.bingo { gap: 4px; }
+.picker.bingo button { min-width: 0; padding: 0; font-size: .85rem; }
